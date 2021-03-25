@@ -1,0 +1,1799 @@
+---
+title: "New_detrended"
+author: "S. Collins-Key"
+date: "3/5/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(knitr)
+library(rmdformats)
+library(data.table)
+library(mkac)
+library(MASS)
+library(AER)
+library(VGAM)
+library(ggplot2)
+library(patchwork)
+library(ggformula)
+library(tidyr)
+library(tidyverse)
+library(grid)
+library(dplR)
+library(ggpmisc)
+library(pracma)
+library(sarima)
+library(FitARMA)
+library(trend)
+library(mblm)
+
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=FALSE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+
+```{r detrending}
+
+# detrending with dplR ##########
+library(dplR)
+library(tidyverse)
+
+
+cb_living <- subset(cambial_age, cg_status %in% "living")
+cb_dead <- subset(cambial_age, cg_status %in% "dead")
+
+### Replace all zeroes with NAs (if needed) ###
+is.na(cb_living) <- !cb_living
+is.na(cb_dead) <- !cb_dead
+
+cb_crdtrd1 <- subset(cambial_age, select = c(num_crd, ct_trd_level_1, cambial_age, cg_status))
+cb_crdtrd1$num_crd <- as.numeric(cb_crdtrd1$num_crd)
+cb_crdtrd1$ct_trd_level_1 <- as.numeric(cb_crdtrd1$ct_trd_level_1)
+cb_crdtrd1$crdtrd1_sum <- cb_crdtrd1$num_crd + cb_crdtrd1$ct_trd_level_1
+
+cb_crdtrd1_living <- subset(cb_crdtrd1, cg_status %in% "living")
+cb_crdtrd1_dead <- subset(cb_crdtrd1, cg_status %in% "dead")
+
+
+cb_trd2n3 <- subset(cambial_age, select = c(ct_trd_level_2, ct_trd_level_3, cambial_age, cg_status))
+cb_trd2n3$ct_trd_level_2 <- as.numeric(cb_trd2n3$ct_trd_level_2)
+cb_trd2n3$ct_trd_level_3 <- as.numeric(cb_trd2n3$ct_trd_level_3)
+cb_trd2n3$trd2n3_sum <- cb_trd2n3$ct_trd_level_2 + cb_trd2n3$ct_trd_level_3
+
+cb_trd2n3_living <- subset(cb_trd2n3, cg_status %in% "living")
+cb_trd2n3_dead <- subset(cb_trd2n3, cg_status %in% "dead")
+
+
+########## resin ducts in ALL trees ##########
+rdcamb_fulla <- subset(cmbage_full, select = c(total_rd, cambial_age))
+rdcamb_fulla.tbl <- data.table(rdcamb_fulla)
+rdcamb_fulla2 <- rdcamb_fulla.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(total_rds = sum(total_rd))
+rdcamb_fulla3 <- data.frame(rdcamb_fulla2)
+rdcamb_fulla3_add1 <- rdcamb_fulla3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+rd_all <- detrend.series(y = rdcamb_fulla3_add1$total_rds, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+rdall <- rd_all$series
+write.csv(rdall, file="rdall.csv")
+
+########## resin ducts in living trees ##########
+rdcamb_full_living <- subset(cb_living, select = c(total_rd, cambial_age))
+rdcamb_full_living.tbl <- data.table(rdcamb_full_living)
+rdcamb_full_living2 <- rdcamb_full_living.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(total_rds = sum(total_rd))
+rdcamb_full_living3 <- data.frame(rdcamb_full_living2)
+rdcamb_full_living3_add1 <- rdcamb_full_living3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+rd_living <- detrend.series(y = rdcamb_full_living3_add1$total_rds, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+rdliving <- rd_living$series
+write.csv(rdliving, file="rdliving.csv")
+
+########## resin ducts in dead trees ##########
+rdcamb_full_dead <- subset(cb_dead, select = c(total_rd, cambial_age))
+rdcamb_full_dead.tbl <- data.table(rdcamb_full_dead) 
+rdcamb_full_dead2 <- rdcamb_full_dead.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(total_rds = sum(total_rd))
+rdcamb_full_dead3 <- data.frame(rdcamb_full_dead2)
+rdcamb_full_dead3_add1 <- rdcamb_full_dead3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+rd_dead <- detrend.series(y = rdcamb_full_dead3_add1$total_rds, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+rddead <- rd_dead$series
+write.csv(rddead, file="rddead.csv")
+
+
+########## constitutive resin ducts (CRDs) in living trees ##########
+crdcamb_full_living <- subset(cb_living, select = c(num_crd, cambial_age))
+crdcamb_full_living.tbl <- data.table(crdcamb_full_living)
+crdcamb_full_living2 <- crdcamb_full_living.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(num_crd = sum(num_crd))
+crdcamb_full_living3 <- data.frame(crdcamb_full_living2)
+crdcamb_full_living3_add1 <- crdcamb_full_living3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+crd_living <- detrend.series(y = crdcamb_full_living3_add1$num_crd, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+crdliving <- crd_living$series
+write.csv(crdliving, file="crdliving.csv")
+
+########## constitutive resin ducts (CRDs) in dead trees ##########
+crdcamb_full_dead <- subset(cb_dead, select = c(num_crd, cambial_age))
+crdcamb_full_dead.tbl <- data.table(crdcamb_full_dead)
+crdcamb_full_dead2 <- crdcamb_full_dead.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(num_crd = sum(num_crd))
+crdcamb_full_dead3 <- data.frame(crdcamb_full_dead2)
+crdcamb_full_dead3_add1 <- crdcamb_full_dead3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+crd_dead <- detrend.series(y = crdcamb_full_dead3_add1$num_crd, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+crddead <- crd_dead$series
+write.csv(crddead, file="crddead.csv")
+
+
+########## traumatic resin ducts (TRDs) in living trees ##########
+trdcamb_full_living <- subset(cb_living, select = c(num_trd, cambial_age))
+trdcamb_full_living.tbl <- data.table(trdcamb_full_living)
+trdcamb_full_living2 <- trdcamb_full_living.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(num_trd = sum(num_trd))
+trdcamb_full_living3 <- data.frame(trdcamb_full_living2)
+trdcamb_full_living3_add1 <- trdcamb_full_living3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+trd_living <- detrend.series(y = trdcamb_full_living3_add1$num_trd, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+trdliving <- trd_living$series
+write.csv(trdliving, file="trdliving.csv")
+
+########## traumatic resin ducts (TRDs) in dead trees ##########
+trdcamb_full_dead <- subset(cb_dead, select = c(num_trd, cambial_age))
+trdcamb_full_dead.tbl <- data.table(trdcamb_full_dead)
+trdcamb_full_dead2 <- trdcamb_full_dead.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(num_trd = sum(num_trd))
+trdcamb_full_dead3 <- data.frame(trdcamb_full_dead2)
+trdcamb_full_dead3_add1 <- trdcamb_full_dead3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+
+trd_dead <- detrend.series(y = trdcamb_full_dead3_add1$num_trd, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+trddead <- trd_dead$series
+write.csv(trddead, file="trddead.csv")
+
+
+########## CRDS + TRD1 resin ducts in living trees ##########
+cb_crdtrd1_full_living <- subset(cb_crdtrd1_living, select = c(crdtrd1_sum, cambial_age))
+cb_crdtrd1_full_living.tbl <- data.table(cb_crdtrd1_full_living)
+cb_crdtrd1_full_living2 <- cb_crdtrd1_full_living.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(crdtrd1_sum = sum(crdtrd1_sum))
+cb_crdtrd1_full_living3 <- data.frame(cb_crdtrd1_full_living2)
+cb_crdtrd1_full_living3_add1 <- cb_crdtrd1_full_living3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+crdtrd1_living <- detrend.series(y = cb_crdtrd1_full_living3_add1$crdtrd1_sum, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+crdtrd1living <- crdtrd1_living$series
+write.csv(crdtrd1living, file="crdtrd1living.csv")
+
+
+########## CRDS + TRD1 resin ducts in dead trees ##########
+cb_crdtrd1_full_dead <- subset(cb_crdtrd1_dead, select = c(crdtrd1_sum, cambial_age))
+cb_crdtrd1_full_dead.tbl <- data.table(cb_crdtrd1_full_dead)
+cb_crdtrd1_full_dead2 <- cb_crdtrd1_full_dead.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(crdtrd1_sum = sum(crdtrd1_sum))
+cb_crdtrd1_full_dead3 <- data.frame(cb_crdtrd1_full_dead2)
+cb_crdtrd1_full_dead3_add1 <- cb_crdtrd1_full_dead3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+crdtrd1_dead <- detrend.series(y = cb_crdtrd1_full_dead3_add1$crdtrd1_sum, method=c("Spline"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+crdtrd1dead <- crdtrd1_dead$series
+write.csv(crdtrd1dead, file="crdtrd1dead.csv")
+
+
+
+########## TRD2 + TRD3 resin ducts in living trees ##########
+cb_trd2n3_full_living <- subset(cb_trd2n3_living, select = c(trd2n3_sum, cambial_age))
+cb_trd2n3_full_living.tbl <- data.table(cb_trd2n3_full_living)
+cb_trd2n3_full_living2 <- cb_trd2n3_full_living.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(trd2n3_sum = sum(trd2n3_sum))
+cb_trd2n3_full_living3 <- data.frame(cb_trd2n3_full_living2)
+cb_trd2n3_full_living3_add1 <- cb_trd2n3_full_living3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+cb_trd2n3_living <- detrend.series(y = cb_trd2n3_full_living3_add1$trd2n3_sum, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+trd2n3living <- cb_trd2n3_living$series
+write.csv(trd2n3living, file="trd2n3living.csv")
+
+########## TRD2 + TRD3 resin ducts in dead trees ##########
+cb_trd2n3_full_dead <- subset(cb_trd2n3_dead, select = c(trd2n3_sum, cambial_age))
+cb_trd2n3_full_dead.tbl <- data.table(cb_trd2n3_full_dead)
+cb_trd2n3_full_dead2 <- cb_trd2n3_full_dead.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(trd2n3_sum = sum(trd2n3_sum))
+cb_trd2n3_full_dead3 <- data.frame(cb_trd2n3_full_dead2)
+cb_trd2n3_full_dead3_add1 <- cb_trd2n3_full_dead3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+cb_trd2n3_dead <- detrend.series(y = cb_trd2n3_full_dead3_add1$trd2n3_sum, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+trd2n3dead <- cb_trd2n3_dead$series
+write.csv(trd2n3dead, file="trd2n3dead.csv")
+
+
+
+
+
+
+
+
+########## blue rings in living trees ##########
+brcamb_full_living <- subset(cb_living, select = c(blue_rings, cambial_age))
+brcamb_full_living.tbl <- data.table(brcamb_full_living) 
+brcamb_full_living2 <- brcamb_full_living.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(blue_rings = sum(blue_rings))
+brcamb_full_living3 <- data.frame(brcamb_full_living2)
+brcamb_full_living3_add1 <- brcamb_full_living3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+br_living <- detrend.series(y = brcamb_full_living3_add1$blue_rings, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+print(br_living)
+brliving <- br_living$series
+write.csv(brliving, file="brliving.csv")
+
+########## blue rings in dead trees ##########
+brcamb_full_dead <- subset(cb_dead, select = c(blue_rings, cambial_age))
+brcamb_full_dead.tbl <- data.table(brcamb_full_dead) 
+brcamb_full_dead2 <- brcamb_full_dead.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(blue_rings = sum(blue_rings))
+brcamb_full_dead3 <- data.frame(brcamb_full_dead2)
+brcamb_full_dead3_add1 <- brcamb_full_dead3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+br_dead <- detrend.series(y = brcamb_full_dead3_add1$blue_rings, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+print(br_dead)
+brdead <- br_dead$series
+write.csv(brdead, file="brdead.csv")
+
+
+########## frost rings in living trees ##########
+frcamb_full_living <- subset(cb_living, select = c(frost_rings, cambial_age))
+frcamb_full_living.tbl <- data.table(frcamb_full_living) 
+frcamb_full_living2 <- frcamb_full_living.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(frost_rings = sum(frost_rings))
+frcamb_full_living3 <- data.frame(frcamb_full_living2)
+frcamb_full_living3_add1 <- frcamb_full_living3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+fr_living <- detrend.series(y = frcamb_full_living3_add1$frost_rings, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+print(fr_living)
+frliving <- fr_living$series
+write.csv(frliving, file="frliving.csv")
+
+########## frost rings in dead trees ##########
+frcamb_full_dead <- subset(cb_dead, select = c(frost_rings, cambial_age))
+frcamb_full_dead.tbl <- data.table(frcamb_full_dead) 
+frcamb_full_dead2 <- frcamb_full_dead.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(frost_rings = sum(frost_rings))
+frcamb_full_dead3 <- data.frame(frcamb_full_dead2)
+frcamb_full_dead3_add1 <- frcamb_full_dead3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+fr_dead <- detrend.series(y = frcamb_full_dead3_add1$frost_rings, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+print(fr_dead)
+frdead <- fr_dead$series
+write.csv(frdead, file="frdead.csv")
+
+
+########## density anomalies in living trees ##########
+dacamb_full_living <- subset(cb_living, select = c(all_density_effects, cambial_age))
+dacamb_full_living.tbl <- data.table(dacamb_full_living) 
+dacamb_full_living2 <- dacamb_full_living.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(all_density_effects = sum(all_density_effects))
+dacamb_full_living3 <- data.frame(dacamb_full_living2)
+dacamb_full_living3_add1 <- dacamb_full_living3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+da_living <- detrend.series(y = dacamb_full_living3_add1$all_density_effects, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+print(da_living)
+daliving <- da_living$series
+write.csv(daliving, file="daliving.csv")
+
+########## density anomalies in dead trees ##########
+dacamb_full_dead <- subset(cb_dead, select = c(all_density_effects, cambial_age))
+dacamb_full_dead.tbl <- data.table(dacamb_full_dead) 
+dacamb_full_dead2 <- dacamb_full_dead.tbl %>% 
+  group_by(cambial_age) %>% 
+  summarise(all_density_effects = sum(all_density_effects))
+dacamb_full_dead3 <- data.frame(dacamb_full_dead2)
+dacamb_full_dead3_add1 <- dacamb_full_dead3 %>%
+  mutate_if(is.numeric, function(x) x+1)
+da_dead <- detrend.series(y = dacamb_full_dead3_add1$all_density_effects, method=c("Friedman"),verbose = TRUE, return.info = TRUE, make.plot = TRUE)
+print(da_dead)
+
+dadead <- da_dead$series
+write.csv(dadead, file="dadead.csv")
+
+```
+
+
+```{r LOESS plotting}
+
+########## plotted detrended data for RDs in ALL trees ##########
+ggplot(data=rdall, mapping = aes(x = cambial_age, y = rdall), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = rdall), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_poly_eq(parse=T, aes(label = ..eq.label..), formula=y~x) + stat_smooth(method = "loess", formula = y ~ x, n=159, se = FALSE, col = "snow", lwd = 2) + stat_smooth(aes(outfit=fit<<-..y..), method = "loess", formula = y ~ x, se = FALSE, col = "gray30", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "RD Frequency")
+
+########## plotted detrended data for RDs in living trees ##########
+ggplot(data=LIVING, mapping = aes(x = cambial_age, y = rd), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = rd), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#4292c6", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "RD Frequency")
+
+########## plotted detrended data for RDs in dead trees ##########
+ggplot(data=DEAD, mapping = aes(x = cambial_age, y = rd), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = rd), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#d8094b", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "RD Frequency")
+
+
+########## plotted detrended data for CRDs in living trees ##########
+ggplot(data=LIVING, mapping = aes(x = cambial_age, y = crd), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = crd), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#4292c6", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "CRD Frequency")
+
+########## plotted detrended data for CRDs in dead trees ##########
+ggplot(data=DEAD, mapping = aes(x = cambial_age, y = crd), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = crd), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#d8094b", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "CRD Frequency")
+
+
+########## plotted detrended data for TRDs in living trees 
+########## plotted detrended data for TRDs in dead trees ##########
+ggplot(data=DEAD, mapping = aes(x = cambial_age, y = trd), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = trd), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#d8094b", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "TRD Frequency")
+
+########## plotted detrended data for CRDTRD1s in living trees ##########
+ggplot(data=LIVING, mapping = aes(x = cambial_age, y = crdtrd1), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = crdtrd1), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#4292c6", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "CRD + TRD1 Frequency")
+
+########## plotted detrended data for CRDTRD1s in dead trees ##########
+ggplot(data=DEAD, mapping = aes(x = cambial_age, y = crdtrd1), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = crdtrd1), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#d8094b", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "CRD + TRD1 Frequency")
+
+########## plotted detrended data for TRD2n3 in living trees ##########
+ggplot(data=LIVING, mapping = aes(x = cambial_age, y = trd2n3), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = trd2n3), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#4292c6", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "TRD2 + TRD3 Frequency")
+
+########## plotted detrended data for TRD2n3s in dead trees ##########
+ggplot(data=DEAD, mapping = aes(x = cambial_age, y = trd2n3), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = trd2n3), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#d8094b", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "TRD2 + TRD3 Frequency")
+
+
+########## plotted detrended data for blue rings in living trees ##########
+ggplot(data=LIVING, mapping = aes(x = cambial_age, y = br), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = br), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#4292c6", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "Blue Ring Frequency")
+
+########## plotted detrended data for blue rings in dead trees ##########
+ggplot(data=DEAD, mapping = aes(x = cambial_age, y = br), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = br), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#d8094b", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "Blue Ring Frequency")
+
+########## plotted detrended data for frost rings in living trees ##########
+ggplot(data=LIVING, mapping = aes(x = cambial_age, y = fr), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = fr), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#4292c6", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "Frost Ring Frequency")
+
+########## plotted detrended data for frost rings in dead trees ##########
+ggplot(data=DEAD, mapping = aes(x = cambial_age, y = fr), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = fr), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#d8094b", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "Frost Ring Frequency")
+
+
+########## plotted detrended data for DAs rings in living trees ##########
+ggplot(data=LIVING, mapping = aes(x = cambial_age, y = da), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = da), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#4292c6", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "Density Anomaly Frequency")
+
+
+########## plotted detrended data for DAs in dead trees ##########
+ggplot(data=DEAD, mapping = aes(x = cambial_age, y = da), show.legend=TRUE) + stat_summary(aes(x = cambial_age, y = da), fun = sum, geom = "col", fill = "grey", color = "mintcream", lwd = 0.1) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "snow", lwd = 2) + stat_smooth(method = "loess", formula = y ~ x, se = FALSE, col = "#d8094b", lwd = 1.3) + theme(text=element_text(size=12, family="Myriad Pro Condensed"), axis.title.x = element_text(family="Myriad Pro Bold Condensed", vjust = -0.5), axis.title.y = element_text(family="Myriad Pro Bold Condensed", vjust = 2.5), panel.grid.major = element_line(size = 0.2, linetype = "dotted", colour = "azure4"), panel.grid.minor = element_blank(), panel.background = element_rect(fill="snow"), plot.margin = unit(c(0.25, 0.25, 0.3, 0.25), "cm")) + labs(x = "Cambial age", y = "Density Anomaly Frequency")
+
+
+```
+
+
+```{r cox stuart trend test, sens slope, pettitts test}
+
+#### Cox & Stuart TREND TEST ####
+
+cs.test(LIVING$rd)
+
+cs.test(LIVING$crd)
+
+cs.test(LIVING$trd)
+
+cs.test(LIVING$crdtrd1)
+
+cs.test(LIVING$trd2n3)
+
+cs.test(LIVING$fr)
+
+cs.test(LIVING$br)
+
+cs.test(LIVING$da)
+
+
+
+cs.test(DEAD$rd)
+
+cs.test(DEAD$crd)
+
+cs.test(DEAD$trd)
+
+cs.test(DEAD$crdtrd1)
+
+cs.test(DEAD$trd2n3)
+
+cs.test(DEAD$fr)
+
+cs.test(DEAD$br)
+
+cs.test(DEAD$da)
+
+
+
+
+
+#### Sen's Slope ####
+
+sens.slope(LIVING$rd)
+
+sens.slope(LIVING$crd)
+
+sens.slope(LIVING$trd)
+
+sens.slope(LIVING$crdtrd1)
+
+sens.slope(LIVING$trd2n3)
+
+sens.slope(LIVING$fr)
+
+sens.slope(LIVING$br)
+
+sens.slope(LIVING$da)
+
+
+
+sens.slope(DEAD$rd)
+
+sens.slope(DEAD$crd)
+
+sens.slope(DEAD$trd)
+
+sens.slope(DEAD$crdtrd1)
+
+sens.slope(DEAD$trd2n3)
+
+sens.slope(DEAD$fr)
+
+sens.slope(DEAD$br)
+ 
+sens.slope(DEAD$da)
+
+
+
+
+#### Pettitt's CHANGE-POINT TEST ####
+
+pett_rdliving <- pettitt.test(LIVING$rd)
+plot(pett_rdliving)
+abline(v=116, lwd=2, col="darkred")
+                                                        
+pett_crdliving <- pettitt.test(LIVING$crd)
+plot(pett_crdliving)
+abline(v=117, lwd=2, col="darkred")
+                                                        
+pett_trdliving <- pettitt.test(LIVING$trd)
+plot(pett_trdliving)
+abline(v=115, lwd=2, col="darkred")
+
+pett_crdtrd1living <- pettitt.test(LIVING$crdtrd1)
+plot(pett_crdtrd1living)
+abline(v=116, lwd=2, col="darkred")
+                                                        
+pett_trd2n3living <- pettitt.test(LIVING$trd2n3)
+plot(pett_trd2n3living)
+abline(v=100, lwd=2, col="darkred")
+                                                        
+pett_frliving <- pettitt.test(LIVING$fr)
+plot(pett_frliving)
+abline(v=95, lwd=2, col="darkred")
+                                                          
+pett_brliving <- pettitt.test(LIVING$br)
+plot(pett_brliving)
+abline(v=84, lwd=2, col="darkred")
+                                                          
+pett_daliving <- pettitt.test(LIVING$da)
+plot(pett_daliving)
+abline(v=32, lwd=2, col="darkred")
+                             
+
+  
+                          
+pett_rddead <- pettitt.test(DEAD$rd)
+plot(pett_rddead)
+abline(v=124, lwd=2, col="darkred")
+                                                        
+pett_crddead <- pettitt.test(DEAD$crd)
+plot(pett_crddead)
+abline(v=10, lwd=2, col="darkred")
+
+pett_trddead <- pettitt.test(DEAD$trd)
+plot(pett_trddead)
+abline(v=124, lwd=2, col="darkred")
+
+pett_crdtrd1dead <- pettitt.test(DEAD$crdtrd1)
+plot(pett_crdtrd1dead)
+abline(v=7, lwd=2, col="darkred")
+
+pett_trd2n3dead <- pettitt.test(DEAD$trd2n3)
+plot(pett_trd2n3dead)
+abline(v=82, lwd=2, col="darkred")
+
+pett_frdead <- pettitt.test(DEAD$fr)
+plot(pett_frdead)
+abline(v=118, lwd=2, col="darkred")
+
+pett_brdead <- pettitt.test(DEAD$br)
+plot(pett_brdead)
+abline(v=88, lwd=2, col="darkred")
+                             
+pett_dadead <- pettitt.test(DEAD$da)
+plot(pett_dadead)
+abline(v=45, lwd=2, col="darkred")
+                             
+
+```
+
+
+```{r SEA plots with climate data}
+
+#### Create custom event years ####
+
+eventyrs.avgtemp02<-c(1895,1899,1901,1903,1905,1909,1913,1914,1916,1918,1922,1929,1930,1932,1936,1937,1939,1940,1949,1957,1962,1963,1978,1979,1983,1989)
+eventyrs.avgtemp98<-c(1901,1919,1931,1933,1934,1935,1936,1940,1954,1963,1964,1966,1980,1983,1989,2000,2001,2002,2003,2005,2006,2007,2008,2011,2012,2016,2017)
+
+eventyrs.mintemp02<-c(1895,1897,1899,1901,1903,1905,1909,1913,1914,1916,1918,1922,1924,1929,1930,1932,1933,1936,197,1939,1949,1957,1962,1963,1978,1979,1983,1989,1990)
+eventyrs.mintemp98<-c(1901,1919,1931,1933,1934,1935,1936,1940,1953,1954,1955,1963,1964,1966,1976,1977,1980,1983,1989,1998,2000,2001,2002,2003,2006,2007,2011,2012,2013,2017)
+
+eventyrs.maxtemp02<-c(1899,1901,1903,1905,1909,1913,1914,1916,1918,1922,1924,1929,1930,1932,1936,1937,1939,1940,1949,1957,1962,1963,1972,1978,1979,1983,1989)
+eventyrs.maxtemp98<-c(1931,1933,1934,1935,1936,1939,1940,1943,1954,1963,1964,1966,1980,1989,1995,2000,2001,2002,2003,2005,2006,2007,2008,2011,2012,2016,2017)
+
+eventyrs.precip02<-c(1896,1898,1899,1900,1901,1904,1905,1907,1908,1914,1919,1929,1931,1933,1939,1949,1956,1958,1959,1961,1963,1965,1983,1988,1989,1991,1996,2001,2004,2010,2012)
+eventyrs.precip98<-c(1898,1900,1908,1917,1920,1930,1935,1941,1942,1945,1946,1947,1949,1957,1962,1965,1967,1970,1971,1973,1978,1981,1991,1993,1995,2008,2011,2015,2018,2019)
+
+eventyrs.pdsiextrdrght<-c(1910,1911,1934,1935,1939,1940,1954,1960,1966,1989,2002,2003,2004,2006,2007,2012,2013)
+
+eventyrs.mpb<-c(1909,1927,1928,1929,1930,1931,1945,1946,1947,1948,1949,1977,1978,1979,1980,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016)
+
+
+
+
+# Create parameter data frame for SEA for living trees
+
+############### LIVING TREES ###############
+sea_trds_cg <- subset(LIVING, select=c(year, trd))
+sea_trds_living <- subset(sea_trds_cg, select=c(year, trd))
+sea_trds_tapply_living <- tapply(sea_trds_living$trd, sea_trds_living$year, FUN=sum)
+sea_trds_tapply_df_living <- as.data.frame(sea_trds_tapply_living)
+
+sea_fr_cg <- subset(LIVING, select=c(year, fr))
+sea_fr_living <- subset(sea_fr_cg, select=c(year, fr))
+sea_fr_tapply_living <- tapply(sea_fr_living$fr, sea_fr_living$year, FUN=sum)
+sea_fr_tapply_df_living <- as.data.frame(sea_fr_tapply_living)
+
+sea_br_cg <- subset(LIVING, select=c(year, br))
+sea_br_living <- subset(sea_br_cg, select=c(year, br))
+sea_br_tapply_living <- tapply(sea_br_living$br, sea_br_living$year, FUN=sum)
+sea_br_tapply_df_living <- as.data.frame(sea_br_tapply_living)
+
+sea_dens_cg <- subset(LIVING, select=c(year, da))
+sea_dens_living <- subset(sea_dens_cg, select=c(year, da))
+sea_dens_tapply_living <- tapply(sea_dens_living$da, sea_dens_living$year, FUN=sum)
+sea_dens_tapply_df_living <- as.data.frame(sea_dens_tapply_living)
+
+
+
+
+#### DENSITY ANOMALIES ####
+
+lsea_dens_avgT02<-sea(sea_dens_tapply_df_living, eventyrs.avgtemp02, lag = 6, resample = 1000)
+lsea_dens_avgT02.lsea <- lsea_dens_avgT02[-c(1,2,3), ]
+lsea_dens_avgT02.lag <- lsea_dens_avgT02.lsea$se
+names(lsea_dens_avgT02.lag) <- lsea_dens_avgT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_avgT02.lag, col = ifelse(lsea_dens_avgT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_avgT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_avgT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_avgT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_avgT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_avgT98<-sea(sea_dens_tapply_df_living, eventyrs.avgtemp98, lag = 6, resample = 1000)
+lsea_dens_avgT98.lsea <- lsea_dens_avgT98[-c(1,2,3), ]
+lsea_dens_avgT98.lag <- lsea_dens_avgT98.lsea$se
+names(lsea_dens_avgT98.lag) <- lsea_dens_avgT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_avgT98.lag, col = ifelse(lsea_dens_avgT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_avgT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_avgT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_avgT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_avgT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_minT02<-sea(sea_dens_tapply_df_living, eventyrs.mintemp02, lag = 6, resample = 1000)
+lsea_dens_minT02.lsea <- lsea_dens_minT02[-c(1,2,3), ]
+lsea_dens_minT02.lag <- lsea_dens_minT02.lsea$se
+names(lsea_dens_minT02.lag) <- lsea_dens_minT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_minT02.lag, col = ifelse(lsea_dens_minT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_minT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_minT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_minT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_minT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_minT98<-sea(sea_dens_tapply_df_living, eventyrs.mintemp98, lag = 6, resample = 1000)
+lsea_dens_minT98.lsea <- lsea_dens_minT98[-c(1,2,3), ]
+lsea_dens_minT98.lag <- lsea_dens_minT98.lsea$se
+names(lsea_dens_minT98.lag) <- lsea_dens_minT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_minT98.lag, col = ifelse(lsea_dens_minT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_minT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_minT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_minT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_minT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_maxT02<-sea(sea_dens_tapply_df_living, eventyrs.maxtemp02, lag = 6, resample = 1000)
+lsea_dens_maxT02.lsea <- lsea_dens_maxT02[-c(1,2,3), ]
+lsea_dens_maxT02.lag <- lsea_dens_maxT02.lsea$se
+names(lsea_dens_maxT02.lag) <- lsea_dens_maxT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_maxT02.lag, col = ifelse(lsea_dens_maxT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_maxT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_maxT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_maxT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_maxT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_maxT98<-sea(sea_dens_tapply_df_living, eventyrs.maxtemp98, lag = 6, resample = 1000)
+lsea_dens_maxT98.lsea <- lsea_dens_maxT98[-c(1,2,3), ]
+lsea_dens_maxT98.lag <- lsea_dens_maxT98.lsea$se
+names(lsea_dens_maxT98.lag) <- lsea_dens_maxT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_maxT98.lag, col = ifelse(lsea_dens_maxT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_maxT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_maxT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_maxT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_maxT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_precip02<-sea(sea_dens_tapply_df_living, eventyrs.precip02, lag = 6, resample = 1000)
+lsea_dens_precip02.lsea <- lsea_dens_precip02[-c(1,2,3), ]
+lsea_dens_precip02.lag <- lsea_dens_precip02.lsea$se
+names(lsea_dens_precip02.lag) <- lsea_dens_precip02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_precip02.lag, col = ifelse(lsea_dens_precip02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_precip02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_precip02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_precip02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_precip02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_precip98<-sea(sea_dens_tapply_df_living, eventyrs.precip98, lag = 6, resample = 1000)
+lsea_dens_precip98.lsea <- lsea_dens_precip98[-c(1,2,3), ]
+lsea_dens_precip98.lag <- lsea_dens_precip98.lsea$se
+names(lsea_dens_precip98.lag) <- lsea_dens_precip98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_precip98.lag, col = ifelse(lsea_dens_precip98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_precip98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_precip98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_precip98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_precip98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_pdsidrgt<-sea(sea_dens_tapply_df_living, eventyrs.pdsiextrdrght, lag = 6, resample = 1000)
+lsea_dens_pdsidrgt.lsea <- lsea_dens_pdsidrgt[-c(1,2,3), ]
+lsea_dens_pdsidrgt.lag <- lsea_dens_pdsidrgt.lsea$se
+names(lsea_dens_pdsidrgt.lag) <- lsea_dens_pdsidrgt.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_pdsidrgt.lag, col = ifelse(lsea_dens_pdsidrgt.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_pdsidrgt$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_pdsidrgt$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_pdsidrgt$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_pdsidrgt$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("PDSI Extreme Drought", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_dens_mpb<-sea(sea_dens_tapply_df_living, eventyrs.mpb, lag = 6, resample = 1000)
+lsea_dens_mpb.lsea <- lsea_dens_mpb[-c(1,2,3), ]
+lsea_dens_mpb.lag <- lsea_dens_mpb.lsea$se
+names(lsea_dens_mpb.lag) <- lsea_dens_mpb.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_dens_mpb.lag, col = ifelse(lsea_dens_mpb.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Density anomalies in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_dens_mpb$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_mpb$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_dens_mpb$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_dens_mpb$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("MPB Outbreaks", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+
+
+
+
+
+
+
+
+#### BLUE RINGS in LIVING trees ####
+
+lsea_br_avgT02<-sea(sea_br_tapply_df_living, eventyrs.avgtemp02, lag = 6, resample = 1000)
+lsea_br_avgT02.lsea <- lsea_br_avgT02[-c(1,2,3), ]
+lsea_br_avgT02.lag <- lsea_br_avgT02.lsea$se
+names(lsea_br_avgT02.lag) <- lsea_br_avgT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_avgT02.lag, col = ifelse(lsea_br_avgT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_avgT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_avgT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_avgT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_avgT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_avgT98<-sea(sea_br_tapply_df_living, eventyrs.avgtemp98, lag = 6, resample = 1000)
+lsea_br_avgT98.lsea <- lsea_br_avgT98[-c(1,2,3), ]
+lsea_br_avgT98.lag <- lsea_br_avgT98.lsea$se
+names(lsea_br_avgT98.lag) <- lsea_br_avgT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_avgT98.lag, col = ifelse(lsea_br_avgT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_avgT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_avgT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_avgT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_avgT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_minT02<-sea(sea_br_tapply_df_living, eventyrs.mintemp02, lag = 6, resample = 1000)
+lsea_br_minT02.lsea <- lsea_br_minT02[-c(1,2,3), ]
+lsea_br_minT02.lag <- lsea_br_minT02.lsea$se
+names(lsea_br_minT02.lag) <- lsea_br_minT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_minT02.lag, col = ifelse(lsea_br_minT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_minT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_minT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_minT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_minT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_minT98<-sea(sea_br_tapply_df_living, eventyrs.mintemp98, lag = 6, resample = 1000)
+lsea_br_minT98.lsea <- lsea_br_minT98[-c(1,2,3), ]
+lsea_br_minT98.lag <- lsea_br_minT98.lsea$se
+names(lsea_br_minT98.lag) <- lsea_br_minT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_minT98.lag, col = ifelse(lsea_br_minT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_minT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_minT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_minT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_minT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_maxT02<-sea(sea_br_tapply_df_living, eventyrs.maxtemp02, lag = 6, resample = 1000)
+lsea_br_maxT02.lsea <- lsea_br_maxT02[-c(1,2,3), ]
+lsea_br_maxT02.lag <- lsea_br_maxT02.lsea$se
+names(lsea_br_maxT02.lag) <- lsea_br_maxT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_maxT02.lag, col = ifelse(lsea_br_maxT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_maxT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_maxT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_maxT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_maxT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_maxT98<-sea(sea_br_tapply_df_living, eventyrs.maxtemp98, lag = 6, resample = 1000)
+lsea_br_maxT98.lsea <- lsea_br_maxT98[-c(1,2,3), ]
+lsea_br_maxT98.lag <- lsea_br_maxT98.lsea$se
+names(lsea_br_maxT98.lag) <- lsea_br_maxT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_maxT98.lag, col = ifelse(lsea_br_maxT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_maxT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_maxT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_maxT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_maxT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_precip02<-sea(sea_br_tapply_df_living, eventyrs.precip02, lag = 6, resample = 1000)
+lsea_br_precip02.lsea <- lsea_br_precip02[-c(1,2,3), ]
+lsea_br_precip02.lag <- lsea_br_precip02.lsea$se
+names(lsea_br_precip02.lag) <- lsea_br_precip02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_precip02.lag, col = ifelse(lsea_br_precip02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_precip02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_precip02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_precip02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_precip02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_precip98<-sea(sea_br_tapply_df_living, eventyrs.precip98, lag = 6, resample = 1000)
+lsea_br_precip98.lsea <- lsea_br_precip98[-c(1,2,3), ]
+lsea_br_precip98.lag <- lsea_br_precip98.lsea$se
+names(lsea_br_precip98.lag) <- lsea_br_precip98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_precip98.lag, col = ifelse(lsea_br_precip98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_precip98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_precip98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_precip98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_precip98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_pdsidrgt<-sea(sea_br_tapply_df_living, eventyrs.pdsiextrdrght, lag = 6, resample = 1000)
+lsea_br_pdsidrgt.lsea <- lsea_br_pdsidrgt[-c(1,2,3), ]
+lsea_br_pdsidrgt.lag <- lsea_br_pdsidrgt.lsea$se
+names(lsea_br_pdsidrgt.lag) <- lsea_br_pdsidrgt.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_pdsidrgt.lag, col = ifelse(lsea_br_pdsidrgt.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_pdsidrgt$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_pdsidrgt$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_pdsidrgt$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_pdsidrgt$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("PDSI Extreme Drought", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_br_mpb<-sea(sea_br_tapply_df_living, eventyrs.mpb, lag = 6, resample = 1000)
+lsea_br_mpb.lsea <- lsea_br_mpb[-c(1,2,3), ]
+lsea_br_mpb.lag <- lsea_br_mpb.lsea$se
+names(lsea_br_mpb.lag) <- lsea_br_mpb.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_br_mpb.lag, col = ifelse(lsea_br_mpb.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Blue ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_br_mpb$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_mpb$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_br_mpb$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_br_mpb$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("MPB Outbreaks", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+
+
+
+
+
+#### FROST RINGS in LIVING trees ####
+
+lsea_fr_avgT02<-sea(sea_fr_tapply_df_living, eventyrs.avgtemp02, lag = 6, resample = 1000)
+lsea_fr_avgT02.lsea <- lsea_fr_avgT02[-c(1,2,3), ]
+lsea_fr_avgT02.lag <- lsea_fr_avgT02.lsea$se
+names(lsea_fr_avgT02.lag) <- lsea_fr_avgT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_avgT02.lag, col = ifelse(lsea_fr_avgT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_avgT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_avgT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_avgT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_avgT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_avgT98<-sea(sea_fr_tapply_df_living, eventyrs.avgtemp98, lag = 6, resample = 1000)
+lsea_fr_avgT98.lsea <- lsea_fr_avgT98[-c(1,2,3), ]
+lsea_fr_avgT98.lag <- lsea_fr_avgT98.lsea$se
+names(lsea_fr_avgT98.lag) <- lsea_fr_avgT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_avgT98.lag, col = ifelse(lsea_fr_avgT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_avgT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_avgT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_avgT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_avgT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_minT02<-sea(sea_fr_tapply_df_living, eventyrs.mintemp02, lag = 6, resample = 1000)
+lsea_fr_minT02.lsea <- lsea_fr_minT02[-c(1,2,3), ]
+lsea_fr_minT02.lag <- lsea_fr_minT02.lsea$se
+names(lsea_fr_minT02.lag) <- lsea_fr_minT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_minT02.lag, col = ifelse(lsea_fr_minT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_minT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_minT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_minT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_minT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_minT98<-sea(sea_fr_tapply_df_living, eventyrs.mintemp98, lag = 6, resample = 1000)
+lsea_fr_minT98.lsea <- lsea_fr_minT98[-c(1,2,3), ]
+lsea_fr_minT98.lag <- lsea_fr_minT98.lsea$se
+names(lsea_fr_minT98.lag) <- lsea_fr_minT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_minT98.lag, col = ifelse(lsea_fr_minT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_minT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_minT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_minT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_minT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_maxT02<-sea(sea_fr_tapply_df_living, eventyrs.maxtemp02, lag = 6, resample = 1000)
+lsea_fr_maxT02.lsea <- lsea_fr_maxT02[-c(1,2,3), ]
+lsea_fr_maxT02.lag <- lsea_fr_maxT02.lsea$se
+names(lsea_fr_maxT02.lag) <- lsea_fr_maxT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_maxT02.lag, col = ifelse(lsea_fr_maxT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_maxT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_maxT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_maxT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_maxT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_maxT98<-sea(sea_fr_tapply_df_living, eventyrs.maxtemp98, lag = 6, resample = 1000)
+lsea_fr_maxT98.lsea <- lsea_fr_maxT98[-c(1,2,3), ]
+lsea_fr_maxT98.lag <- lsea_fr_maxT98.lsea$se
+names(lsea_fr_maxT98.lag) <- lsea_fr_maxT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_maxT98.lag, col = ifelse(lsea_fr_maxT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_maxT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_maxT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_maxT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_maxT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_precip02<-sea(sea_fr_tapply_df_living, eventyrs.precip02, lag = 6, resample = 1000)
+lsea_fr_precip02.lsea <- lsea_fr_precip02[-c(1,2,3), ]
+lsea_fr_precip02.lag <- lsea_fr_precip02.lsea$se
+names(lsea_fr_precip02.lag) <- lsea_fr_precip02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_precip02.lag, col = ifelse(lsea_fr_precip02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_precip02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_precip02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_precip02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_precip02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_precip98<-sea(sea_fr_tapply_df_living, eventyrs.precip98, lag = 6, resample = 1000)
+lsea_fr_precip98.lsea <- lsea_fr_precip98[-c(1,2,3), ]
+lsea_fr_precip98.lag <- lsea_fr_precip98.lsea$se
+names(lsea_fr_precip98.lag) <- lsea_fr_precip98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_precip98.lag, col = ifelse(lsea_fr_precip98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_precip98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_precip98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_precip98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_precip98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_pdsidrgt<-sea(sea_fr_tapply_df_living, eventyrs.pdsiextrdrght, lag = 6, resample = 1000)
+lsea_fr_pdsidrgt.lsea <- lsea_fr_pdsidrgt[-c(1,2,3), ]
+lsea_fr_pdsidrgt.lag <- lsea_fr_pdsidrgt.lsea$se
+names(lsea_fr_pdsidrgt.lag) <- lsea_fr_pdsidrgt.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_pdsidrgt.lag, col = ifelse(lsea_fr_pdsidrgt.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_pdsidrgt$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_pdsidrgt$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_pdsidrgt$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_pdsidrgt$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("PDSI Extreme Drought", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_fr_mpb<-sea(sea_fr_tapply_df_living, eventyrs.mpb, lag = 6, resample = 1000)
+lsea_fr_mpb.lsea <- lsea_fr_mpb[-c(1,2,3), ]
+lsea_fr_mpb.lag <- lsea_fr_mpb.lsea$se
+names(lsea_fr_mpb.lag) <- lsea_fr_mpb.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_fr_mpb.lag, col = ifelse(lsea_fr_mpb.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Frost ring frequency in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_fr_mpb$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_mpb$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_fr_mpb$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_fr_mpb$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("MPB Outbreaks", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+
+
+
+
+#### TRAUMATIC RESIN DUCTS in LIVING trees ####
+
+lsea_trds_avgT02<-sea(sea_trds_tapply_df_living, eventyrs.avgtemp02, lag = 6, resample = 1000)
+lsea_trds_avgT02.lsea <- lsea_trds_avgT02[-c(1,2,3), ]
+lsea_trds_avgT02.lag <- lsea_trds_avgT02.lsea$se
+names(lsea_trds_avgT02.lag) <- lsea_trds_avgT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_avgT02.lag, col = ifelse(lsea_trds_avgT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_avgT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_avgT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_avgT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_avgT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_avgT98<-sea(sea_trds_tapply_df_living, eventyrs.avgtemp98, lag = 6, resample = 1000)
+lsea_trds_avgT98.lsea <- lsea_trds_avgT98[-c(1,2,3), ]
+lsea_trds_avgT98.lag <- lsea_trds_avgT98.lsea$se
+names(lsea_trds_avgT98.lag) <- lsea_trds_avgT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_avgT98.lag, col = ifelse(lsea_trds_avgT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_avgT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_avgT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_avgT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_avgT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_minT02<-sea(sea_trds_tapply_df_living, eventyrs.mintemp02, lag = 6, resample = 1000)
+lsea_trds_minT02.lsea <- lsea_trds_minT02[-c(1,2,3), ]
+lsea_trds_minT02.lag <- lsea_trds_minT02.lsea$se
+names(lsea_trds_minT02.lag) <- lsea_trds_minT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_minT02.lag, col = ifelse(lsea_trds_minT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_minT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_minT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_minT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_minT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_minT98<-sea(sea_trds_tapply_df_living, eventyrs.mintemp98, lag = 6, resample = 1000)
+lsea_trds_minT98.lsea <- lsea_trds_minT98[-c(1,2,3), ]
+lsea_trds_minT98.lag <- lsea_trds_minT98.lsea$se
+names(lsea_trds_minT98.lag) <- lsea_trds_minT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_minT98.lag, col = ifelse(lsea_trds_minT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_minT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_minT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_minT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_minT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_maxT02<-sea(sea_trds_tapply_df_living, eventyrs.maxtemp02, lag = 6, resample = 1000)
+lsea_trds_maxT02.lsea <- lsea_trds_maxT02[-c(1,2,3), ]
+lsea_trds_maxT02.lag <- lsea_trds_maxT02.lsea$se
+names(lsea_trds_maxT02.lag) <- lsea_trds_maxT02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_maxT02.lag, col = ifelse(lsea_trds_maxT02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_maxT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_maxT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_maxT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_maxT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_maxT98<-sea(sea_trds_tapply_df_living, eventyrs.maxtemp98, lag = 6, resample = 1000)
+lsea_trds_maxT98.lsea <- lsea_trds_maxT98[-c(1,2,3), ]
+lsea_trds_maxT98.lag <- lsea_trds_maxT98.lsea$se
+names(lsea_trds_maxT98.lag) <- lsea_trds_maxT98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_maxT98.lag, col = ifelse(lsea_trds_maxT98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_maxT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_maxT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_maxT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_maxT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_precip02<-sea(sea_trds_tapply_df_living, eventyrs.precip02, lag = 6, resample = 1000)
+lsea_trds_precip02.lsea <- lsea_trds_precip02[-c(1,2,3), ]
+lsea_trds_precip02.lag <- lsea_trds_precip02.lsea$se
+names(lsea_trds_precip02.lag) <- lsea_trds_precip02.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_precip02.lag, col = ifelse(lsea_trds_precip02.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_precip02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_precip02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_precip02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_precip02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_precip98<-sea(sea_trds_tapply_df_living, eventyrs.precip98, lag = 6, resample = 1000)
+lsea_trds_precip98.lsea <- lsea_trds_precip98[-c(1,2,3), ]
+lsea_trds_precip98.lag <- lsea_trds_precip98.lsea$se
+names(lsea_trds_precip98.lag) <- lsea_trds_precip98.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_precip98.lag, col = ifelse(lsea_trds_precip98.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_precip98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_precip98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_precip98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_precip98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_pdsidrgt<-sea(sea_trds_tapply_df_living, eventyrs.pdsiextrdrght, lag = 6, resample = 1000)
+lsea_trds_pdsidrgt.lsea <- lsea_trds_pdsidrgt[-c(1,2,3), ]
+lsea_trds_pdsidrgt.lag <- lsea_trds_pdsidrgt.lsea$se
+names(lsea_trds_pdsidrgt.lag) <- lsea_trds_pdsidrgt.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_pdsidrgt.lag, col = ifelse(lsea_trds_pdsidrgt.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_pdsidrgt$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_pdsidrgt$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_pdsidrgt$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_pdsidrgt$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("PDSI Extreme Drought", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+lsea_trds_mpb<-sea(sea_trds_tapply_df_living, eventyrs.mpb, lag = 6, resample = 1000)
+lsea_trds_mpb.lsea <- lsea_trds_mpb[-c(1,2,3), ]
+lsea_trds_mpb.lag <- lsea_trds_mpb.lsea$se
+names(lsea_trds_mpb.lag) <- lsea_trds_mpb.lsea$lag
+barplot(ylim = c(-0.8,0.8), lsea_trds_mpb.lag, col = ifelse(lsea_trds_mpb.lsea$p < 0.05, "deepskyblue4", "lightsteelblue1"), ylab = "Traumatic resin ducts in living trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(lsea_trds_mpb$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_mpb$ci.99.upper, lwd=2, col="darkslategrey")
+lines(lsea_trds_mpb$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(lsea_trds_mpb$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("MPB Outbreaks", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+
+
+
+
+
+
+
+
+
+
+############### DEAD TREES ###############
+
+
+# Create parameter data frame for SEA for dead trees
+
+sea_trds_cg <- subset(DEAD, select=c(year, trd))
+sea_trds_dead <- subset(sea_trds_cg, select=c(year, trd))
+sea_trds_tapply_dead <- tapply(sea_trds_dead$trd, sea_trds_dead$year, FUN=sum)
+sea_trds_tapply_df_dead <- as.data.frame(sea_trds_tapply_dead)
+
+sea_fr_cg <- subset(DEAD, select=c(year, fr))
+sea_fr_dead <- subset(sea_fr_cg, select=c(year, fr))
+sea_fr_tapply_dead <- tapply(sea_fr_dead$fr, sea_fr_dead$year, FUN=sum)
+sea_fr_tapply_df_dead <- as.data.frame(sea_fr_tapply_dead)
+
+sea_br_cg <- subset(DEAD, select=c(year, br))
+sea_br_dead <- subset(sea_br_cg, select=c(year, br))
+sea_br_tapply_dead <- tapply(sea_br_dead$br, sea_br_dead$year, FUN=sum)
+sea_br_tapply_df_dead <- as.data.frame(sea_br_tapply_dead)
+
+sea_dens_cg <- subset(DEAD, select=c(year, da))
+sea_dens_dead <- subset(sea_dens_cg, select=c(year, da))
+sea_dens_tapply_dead <- tapply(sea_dens_dead$da, sea_dens_dead$year, FUN=sum)
+sea_dens_tapply_df_dead <- as.data.frame(sea_dens_tapply_dead)
+
+
+
+
+
+#### DENSITY ANOMALIES in DEAD trees ####
+
+dsea_dens_avgT02<-sea(sea_dens_tapply_df_dead, eventyrs.avgtemp02, lag = 6, resample = 1000)
+dsea_dens_avgT02.dsea <- dsea_dens_avgT02[-c(1,2,3), ]
+dsea_dens_avgT02.lag <- dsea_dens_avgT02.dsea$se
+names(dsea_dens_avgT02.lag) <- dsea_dens_avgT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_avgT02.lag, col = ifelse(dsea_dens_avgT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_avgT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_avgT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_avgT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_avgT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_avgT98<-sea(sea_dens_tapply_df_dead, eventyrs.avgtemp98, lag = 6, resample = 1000)
+dsea_dens_avgT98.dsea <- dsea_dens_avgT98[-c(1,2,3), ]
+dsea_dens_avgT98.lag <- dsea_dens_avgT98.dsea$se
+names(dsea_dens_avgT98.lag) <- dsea_dens_avgT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_avgT98.lag, col = ifelse(dsea_dens_avgT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_avgT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_avgT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_avgT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_avgT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_minT02<-sea(sea_dens_tapply_df_dead, eventyrs.mintemp02, lag = 6, resample = 1000)
+dsea_dens_minT02.dsea <- dsea_dens_minT02[-c(1,2,3), ]
+dsea_dens_minT02.lag <- dsea_dens_minT02.dsea$se
+names(dsea_dens_minT02.lag) <- dsea_dens_minT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_minT02.lag, col = ifelse(dsea_dens_minT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_minT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_minT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_minT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_minT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_minT98<-sea(sea_dens_tapply_df_dead, eventyrs.mintemp98, lag = 6, resample = 1000)
+dsea_dens_minT98.dsea <- dsea_dens_minT98[-c(1,2,3), ]
+dsea_dens_minT98.lag <- dsea_dens_minT98.dsea$se
+names(dsea_dens_minT98.lag) <- dsea_dens_minT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_minT98.lag, col = ifelse(dsea_dens_minT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_minT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_minT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_minT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_minT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_maxT02<-sea(sea_dens_tapply_df_dead, eventyrs.maxtemp02, lag = 6, resample = 1000)
+dsea_dens_maxT02.dsea <- dsea_dens_maxT02[-c(1,2,3), ]
+dsea_dens_maxT02.lag <- dsea_dens_maxT02.dsea$se
+names(dsea_dens_maxT02.lag) <- dsea_dens_maxT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_maxT02.lag, col = ifelse(dsea_dens_maxT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_maxT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_maxT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_maxT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_maxT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_maxT98<-sea(sea_dens_tapply_df_dead, eventyrs.maxtemp98, lag = 6, resample = 1000)
+dsea_dens_maxT98.dsea <- dsea_dens_maxT98[-c(1,2,3), ]
+dsea_dens_maxT98.lag <- dsea_dens_maxT98.dsea$se
+names(dsea_dens_maxT98.lag) <- dsea_dens_maxT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_maxT98.lag, col = ifelse(dsea_dens_maxT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_maxT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_maxT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_maxT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_maxT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_precip02<-sea(sea_dens_tapply_df_dead, eventyrs.precip02, lag = 6, resample = 1000)
+dsea_dens_precip02.dsea <- dsea_dens_precip02[-c(1,2,3), ]
+dsea_dens_precip02.lag <- dsea_dens_precip02.dsea$se
+names(dsea_dens_precip02.lag) <- dsea_dens_precip02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_precip02.lag, col = ifelse(dsea_dens_precip02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_precip02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_precip02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_precip02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_precip02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_precip98<-sea(sea_dens_tapply_df_dead, eventyrs.precip98, lag = 6, resample = 1000)
+dsea_dens_precip98.dsea <- dsea_dens_precip98[-c(1,2,3), ]
+dsea_dens_precip98.lag <- dsea_dens_precip98.dsea$se
+names(dsea_dens_precip98.lag) <- dsea_dens_precip98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_precip98.lag, col = ifelse(dsea_dens_precip98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_precip98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_precip98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_precip98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_precip98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_pdsidrgt<-sea(sea_dens_tapply_df_dead, eventyrs.pdsiextrdrght, lag = 6, resample = 1000)
+dsea_dens_pdsidrgt.dsea <- dsea_dens_pdsidrgt[-c(1,2,3), ]
+dsea_dens_pdsidrgt.lag <- dsea_dens_pdsidrgt.dsea$se
+names(dsea_dens_pdsidrgt.lag) <- dsea_dens_pdsidrgt.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_pdsidrgt.lag, col = ifelse(dsea_dens_pdsidrgt.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_pdsidrgt$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_pdsidrgt$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_pdsidrgt$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_pdsidrgt$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("PDSI Extreme Drought", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_dens_mpb<-sea(sea_dens_tapply_df_dead, eventyrs.mpb, lag = 6, resample = 1000)
+dsea_dens_mpb.dsea <- dsea_dens_mpb[-c(1,2,3), ]
+dsea_dens_mpb.lag <- dsea_dens_mpb.dsea$se
+names(dsea_dens_mpb.lag) <- dsea_dens_mpb.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_dens_mpb.lag, col = ifelse(dsea_dens_mpb.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Density anomalies in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_dens_mpb$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_mpb$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_dens_mpb$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_dens_mpb$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("MPB Outbreaks", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+
+
+
+
+
+
+
+
+#### BLUE RINGS in DEAD trees ####
+
+dsea_br_avgT02<-sea(sea_br_tapply_df_dead, eventyrs.avgtemp02, lag = 6, resample = 1000)
+dsea_br_avgT02.dsea <- dsea_br_avgT02[-c(1,2,3), ]
+dsea_br_avgT02.lag <- dsea_br_avgT02.dsea$se
+names(dsea_br_avgT02.lag) <- dsea_br_avgT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_avgT02.lag, col = ifelse(dsea_br_avgT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_avgT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_avgT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_avgT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_avgT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_avgT98<-sea(sea_br_tapply_df_dead, eventyrs.avgtemp98, lag = 6, resample = 1000)
+dsea_br_avgT98.dsea <- dsea_br_avgT98[-c(1,2,3), ]
+dsea_br_avgT98.lag <- dsea_br_avgT98.dsea$se
+names(dsea_br_avgT98.lag) <- dsea_br_avgT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_avgT98.lag, col = ifelse(dsea_br_avgT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_avgT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_avgT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_avgT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_avgT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_minT02<-sea(sea_br_tapply_df_dead, eventyrs.mintemp02, lag = 6, resample = 1000)
+dsea_br_minT02.dsea <- dsea_br_minT02[-c(1,2,3), ]
+dsea_br_minT02.lag <- dsea_br_minT02.dsea$se
+names(dsea_br_minT02.lag) <- dsea_br_minT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_minT02.lag, col = ifelse(dsea_br_minT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_minT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_minT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_minT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_minT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_minT98<-sea(sea_br_tapply_df_dead, eventyrs.mintemp98, lag = 6, resample = 1000)
+dsea_br_minT98.dsea <- dsea_br_minT98[-c(1,2,3), ]
+dsea_br_minT98.lag <- dsea_br_minT98.dsea$se
+names(dsea_br_minT98.lag) <- dsea_br_minT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_minT98.lag, col = ifelse(dsea_br_minT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_minT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_minT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_minT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_minT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_maxT02<-sea(sea_br_tapply_df_dead, eventyrs.maxtemp02, lag = 6, resample = 1000)
+dsea_br_maxT02.dsea <- dsea_br_maxT02[-c(1,2,3), ]
+dsea_br_maxT02.lag <- dsea_br_maxT02.dsea$se
+names(dsea_br_maxT02.lag) <- dsea_br_maxT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_maxT02.lag, col = ifelse(dsea_br_maxT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_maxT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_maxT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_maxT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_maxT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_maxT98<-sea(sea_br_tapply_df_dead, eventyrs.maxtemp98, lag = 6, resample = 1000)
+dsea_br_maxT98.dsea <- dsea_br_maxT98[-c(1,2,3), ]
+dsea_br_maxT98.lag <- dsea_br_maxT98.dsea$se
+names(dsea_br_maxT98.lag) <- dsea_br_maxT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_maxT98.lag, col = ifelse(dsea_br_maxT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_maxT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_maxT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_maxT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_maxT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_precip02<-sea(sea_br_tapply_df_dead, eventyrs.precip02, lag = 6, resample = 1000)
+dsea_br_precip02.dsea <- dsea_br_precip02[-c(1,2,3), ]
+dsea_br_precip02.lag <- dsea_br_precip02.dsea$se
+names(dsea_br_precip02.lag) <- dsea_br_precip02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_precip02.lag, col = ifelse(dsea_br_precip02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_precip02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_precip02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_precip02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_precip02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_precip98<-sea(sea_br_tapply_df_dead, eventyrs.precip98, lag = 6, resample = 1000)
+dsea_br_precip98.dsea <- dsea_br_precip98[-c(1,2,3), ]
+dsea_br_precip98.lag <- dsea_br_precip98.dsea$se
+names(dsea_br_precip98.lag) <- dsea_br_precip98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_precip98.lag, col = ifelse(dsea_br_precip98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_precip98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_precip98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_precip98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_precip98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_pdsidrgt<-sea(sea_br_tapply_df_dead, eventyrs.pdsiextrdrght, lag = 6, resample = 1000)
+dsea_br_pdsidrgt.dsea <- dsea_br_pdsidrgt[-c(1,2,3), ]
+dsea_br_pdsidrgt.lag <- dsea_br_pdsidrgt.dsea$se
+names(dsea_br_pdsidrgt.lag) <- dsea_br_pdsidrgt.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_pdsidrgt.lag, col = ifelse(dsea_br_pdsidrgt.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_pdsidrgt$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_pdsidrgt$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_pdsidrgt$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_pdsidrgt$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("PDSI Extreme Drought", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_br_mpb<-sea(sea_br_tapply_df_dead, eventyrs.mpb, lag = 6, resample = 1000)
+dsea_br_mpb.dsea <- dsea_br_mpb[-c(1,2,3), ]
+dsea_br_mpb.lag <- dsea_br_mpb.dsea$se
+names(dsea_br_mpb.lag) <- dsea_br_mpb.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_br_mpb.lag, col = ifelse(dsea_br_mpb.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Blue ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_br_mpb$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_mpb$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_br_mpb$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_br_mpb$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("MPB Outbreaks", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+
+
+
+
+
+
+#### FROST RINGS in DEAD trees ####
+
+dsea_fr_avgT02<-sea(sea_fr_tapply_df_dead, eventyrs.avgtemp02, lag = 6, resample = 1000)
+dsea_fr_avgT02.dsea <- dsea_fr_avgT02[-c(1,2,3), ]
+dsea_fr_avgT02.lag <- dsea_fr_avgT02.dsea$se
+names(dsea_fr_avgT02.lag) <- dsea_fr_avgT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_avgT02.lag, col = ifelse(dsea_fr_avgT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_avgT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_avgT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_avgT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_avgT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_avgT98<-sea(sea_fr_tapply_df_dead, eventyrs.avgtemp98, lag = 6, resample = 1000)
+dsea_fr_avgT98.dsea <- dsea_fr_avgT98[-c(1,2,3), ]
+dsea_fr_avgT98.lag <- dsea_fr_avgT98.dsea$se
+names(dsea_fr_avgT98.lag) <- dsea_fr_avgT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_avgT98.lag, col = ifelse(dsea_fr_avgT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_avgT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_avgT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_avgT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_avgT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_minT02<-sea(sea_fr_tapply_df_dead, eventyrs.mintemp02, lag = 6, resample = 1000)
+dsea_fr_minT02.dsea <- dsea_fr_minT02[-c(1,2,3), ]
+dsea_fr_minT02.lag <- dsea_fr_minT02.dsea$se
+names(dsea_fr_minT02.lag) <- dsea_fr_minT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_minT02.lag, col = ifelse(dsea_fr_minT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_minT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_minT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_minT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_minT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_minT98<-sea(sea_fr_tapply_df_dead, eventyrs.mintemp98, lag = 6, resample = 1000)
+dsea_fr_minT98.dsea <- dsea_fr_minT98[-c(1,2,3), ]
+dsea_fr_minT98.lag <- dsea_fr_minT98.dsea$se
+names(dsea_fr_minT98.lag) <- dsea_fr_minT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_minT98.lag, col = ifelse(dsea_fr_minT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_minT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_minT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_minT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_minT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_maxT02<-sea(sea_fr_tapply_df_dead, eventyrs.maxtemp02, lag = 6, resample = 1000)
+dsea_fr_maxT02.dsea <- dsea_fr_maxT02[-c(1,2,3), ]
+dsea_fr_maxT02.lag <- dsea_fr_maxT02.dsea$se
+names(dsea_fr_maxT02.lag) <- dsea_fr_maxT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_maxT02.lag, col = ifelse(dsea_fr_maxT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_maxT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_maxT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_maxT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_maxT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_maxT98<-sea(sea_fr_tapply_df_dead, eventyrs.maxtemp98, lag = 6, resample = 1000)
+dsea_fr_maxT98.dsea <- dsea_fr_maxT98[-c(1,2,3), ]
+dsea_fr_maxT98.lag <- dsea_fr_maxT98.dsea$se
+names(dsea_fr_maxT98.lag) <- dsea_fr_maxT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_maxT98.lag, col = ifelse(dsea_fr_maxT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_maxT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_maxT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_maxT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_maxT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_precip02<-sea(sea_fr_tapply_df_dead, eventyrs.precip02, lag = 6, resample = 1000)
+dsea_fr_precip02.dsea <- dsea_fr_precip02[-c(1,2,3), ]
+dsea_fr_precip02.lag <- dsea_fr_precip02.dsea$se
+names(dsea_fr_precip02.lag) <- dsea_fr_precip02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_precip02.lag, col = ifelse(dsea_fr_precip02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_precip02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_precip02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_precip02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_precip02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_precip98<-sea(sea_fr_tapply_df_dead, eventyrs.precip98, lag = 6, resample = 1000)
+dsea_fr_precip98.dsea <- dsea_fr_precip98[-c(1,2,3), ]
+dsea_fr_precip98.lag <- dsea_fr_precip98.dsea$se
+names(dsea_fr_precip98.lag) <- dsea_fr_precip98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_precip98.lag, col = ifelse(dsea_fr_precip98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_precip98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_precip98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_precip98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_precip98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_pdsidrgt<-sea(sea_fr_tapply_df_dead, eventyrs.pdsiextrdrght, lag = 6, resample = 1000)
+dsea_fr_pdsidrgt.dsea <- dsea_fr_pdsidrgt[-c(1,2,3), ]
+dsea_fr_pdsidrgt.lag <- dsea_fr_pdsidrgt.dsea$se
+names(dsea_fr_pdsidrgt.lag) <- dsea_fr_pdsidrgt.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_pdsidrgt.lag, col = ifelse(dsea_fr_pdsidrgt.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_pdsidrgt$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_pdsidrgt$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_pdsidrgt$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_pdsidrgt$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("PDSI Extreme Drought", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_fr_mpb<-sea(sea_fr_tapply_df_dead, eventyrs.mpb, lag = 6, resample = 1000)
+dsea_fr_mpb.dsea <- dsea_fr_mpb[-c(1,2,3), ]
+dsea_fr_mpb.lag <- dsea_fr_mpb.dsea$se
+names(dsea_fr_mpb.lag) <- dsea_fr_mpb.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_fr_mpb.lag, col = ifelse(dsea_fr_mpb.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Frost ring frequency in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_fr_mpb$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_mpb$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_fr_mpb$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_fr_mpb$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("MPB Outbreaks", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+
+
+
+
+
+
+#### TRAUMATIC RESIN DUCTS in DEAD trees ####
+
+dsea_trds_avgT02<-sea(sea_trds_tapply_df_dead, eventyrs.avgtemp02, lag = 6, resample = 1000)
+dsea_trds_avgT02.dsea <- dsea_trds_avgT02[-c(1,2,3), ]
+dsea_trds_avgT02.lag <- dsea_trds_avgT02.dsea$se
+names(dsea_trds_avgT02.lag) <- dsea_trds_avgT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_avgT02.lag, col = ifelse(dsea_trds_avgT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_avgT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_avgT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_avgT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_avgT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_avgT98<-sea(sea_trds_tapply_df_dead, eventyrs.avgtemp98, lag = 6, resample = 1000)
+dsea_trds_avgT98.dsea <- dsea_trds_avgT98[-c(1,2,3), ]
+dsea_trds_avgT98.lag <- dsea_trds_avgT98.dsea$se
+names(dsea_trds_avgT98.lag) <- dsea_trds_avgT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_avgT98.lag, col = ifelse(dsea_trds_avgT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_avgT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_avgT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_avgT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_avgT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Average temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_minT02<-sea(sea_trds_tapply_df_dead, eventyrs.mintemp02, lag = 6, resample = 1000)
+dsea_trds_minT02.dsea <- dsea_trds_minT02[-c(1,2,3), ]
+dsea_trds_minT02.lag <- dsea_trds_minT02.dsea$se
+names(dsea_trds_minT02.lag) <- dsea_trds_minT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_minT02.lag, col = ifelse(dsea_trds_minT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_minT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_minT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_minT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_minT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_minT98<-sea(sea_trds_tapply_df_dead, eventyrs.mintemp98, lag = 6, resample = 1000)
+dsea_trds_minT98.dsea <- dsea_trds_minT98[-c(1,2,3), ]
+dsea_trds_minT98.lag <- dsea_trds_minT98.dsea$se
+names(dsea_trds_minT98.lag) <- dsea_trds_minT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_minT98.lag, col = ifelse(dsea_trds_minT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_minT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_minT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_minT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_minT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Minimum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_maxT02<-sea(sea_trds_tapply_df_dead, eventyrs.maxtemp02, lag = 6, resample = 1000)
+dsea_trds_maxT02.dsea <- dsea_trds_maxT02[-c(1,2,3), ]
+dsea_trds_maxT02.lag <- dsea_trds_maxT02.dsea$se
+names(dsea_trds_maxT02.lag) <- dsea_trds_maxT02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_maxT02.lag, col = ifelse(dsea_trds_maxT02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_maxT02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_maxT02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_maxT02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_maxT02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_maxT98<-sea(sea_trds_tapply_df_dead, eventyrs.maxtemp98, lag = 6, resample = 1000)
+dsea_trds_maxT98.dsea <- dsea_trds_maxT98[-c(1,2,3), ]
+dsea_trds_maxT98.lag <- dsea_trds_maxT98.dsea$se
+names(dsea_trds_maxT98.lag) <- dsea_trds_maxT98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_maxT98.lag, col = ifelse(dsea_trds_maxT98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_maxT98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_maxT98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_maxT98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_maxT98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Maximum temperature", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_precip02<-sea(sea_trds_tapply_df_dead, eventyrs.precip02, lag = 6, resample = 1000)
+dsea_trds_precip02.dsea <- dsea_trds_precip02[-c(1,2,3), ]
+dsea_trds_precip02.lag <- dsea_trds_precip02.dsea$se
+names(dsea_trds_precip02.lag) <- dsea_trds_precip02.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_precip02.lag, col = ifelse(dsea_trds_precip02.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_precip02$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_precip02$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_precip02$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_precip02$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("2nd %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_precip98<-sea(sea_trds_tapply_df_dead, eventyrs.precip98, lag = 6, resample = 1000)
+dsea_trds_precip98.dsea <- dsea_trds_precip98[-c(1,2,3), ]
+dsea_trds_precip98.lag <- dsea_trds_precip98.dsea$se
+names(dsea_trds_precip98.lag) <- dsea_trds_precip98.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_precip98.lag, col = ifelse(dsea_trds_precip98.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_precip98$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_precip98$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_precip98$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_precip98$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("98th %-ile Precipitation", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_pdsidrgt<-sea(sea_trds_tapply_df_dead, eventyrs.pdsiextrdrght, lag = 6, resample = 1000)
+dsea_trds_pdsidrgt.dsea <- dsea_trds_pdsidrgt[-c(1,2,3), ]
+dsea_trds_pdsidrgt.lag <- dsea_trds_pdsidrgt.dsea$se
+names(dsea_trds_pdsidrgt.lag) <- dsea_trds_pdsidrgt.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_pdsidrgt.lag, col = ifelse(dsea_trds_pdsidrgt.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, 
+las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_pdsidrgt$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_pdsidrgt$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_pdsidrgt$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_pdsidrgt$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("PDSI Extreme Drought", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+###
+
+dsea_trds_mpb<-sea(sea_trds_tapply_df_dead, eventyrs.mpb, lag = 6, resample = 1000)
+dsea_trds_mpb.dsea <- dsea_trds_mpb[-c(1,2,3), ]
+dsea_trds_mpb.lag <- dsea_trds_mpb.dsea$se
+names(dsea_trds_mpb.lag) <- dsea_trds_mpb.dsea$lag
+barplot(ylim = c(-0.8,0.8), dsea_trds_mpb.lag, col = ifelse(dsea_trds_mpb.dsea$p < 0.05, "firebrick", "mistyrose"), ylab = "Traumatic resin ducts in dead trees", xlab = "Year", family="Myriad Pro Condensed", cex.lab=1.5, las=1, axes=TRUE)
+abline(h=0)
+lines(dsea_trds_mpb$ci.95.upper, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_mpb$ci.99.upper, lwd=2, col="darkslategrey")
+lines(dsea_trds_mpb$ci.95.lower, lwd=2, lty=4, col="darkslategray4")
+lines(dsea_trds_mpb$ci.99.lower, lwd=2, col="darkslategrey")
+mtext("MPB Outbreaks", family="Myriad Pro Condensed", side=3, adj=0, cex=2)
+
+
+
+
+
+
+```
+
